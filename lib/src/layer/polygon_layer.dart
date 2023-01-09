@@ -54,6 +54,7 @@ class Polygon {
 
 class PolygonLayer extends StatelessWidget {
   final List<Polygon> polygons;
+  final Widget? child;
 
   /// screen space culling of polygons based on bounding box
   final bool polygonCulling;
@@ -62,6 +63,7 @@ class PolygonLayer extends StatelessWidget {
     super.key,
     this.polygons = const [],
     this.polygonCulling = false,
+    this.child,
   }) {
     if (polygonCulling) {
       for (final polygon in polygons) {
@@ -108,6 +110,7 @@ class PolygonLayer extends StatelessWidget {
               key: polygon.key,
               painter: PolygonPainter(polygon, map.rotationRad),
               size: size,
+              child: child,
             ),
           );
         }
