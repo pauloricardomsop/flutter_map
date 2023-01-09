@@ -110,7 +110,11 @@ class PolygonLayer extends StatelessWidget {
               key: polygon.key,
               painter: PolygonPainter(polygon, map.rotationRad),
               size: size,
-              child: child,
+              child: Container(
+                width: size.width,
+                height: size.height,
+                child: child,
+              ),
             ),
           );
         }
