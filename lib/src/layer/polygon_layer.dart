@@ -1,10 +1,10 @@
 import 'dart:math';
+import 'dart:ui' as ui;
 
-import 'package:flutter/widgets.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_map/plugin_api.dart';
 import 'package:flutter_map/src/layer/label.dart';
-import 'package:flutter_map/src/map/flutter_map_state.dart';
-import 'package:latlong2/latlong.dart' hide Path; // conflict with Path from UI
+import 'package:latlong2/latlong.dart' hide Path;
 
 enum PolygonLabelPlacement {
   centroid,
@@ -54,17 +54,16 @@ class Polygon {
 
 class PolygonLayer extends StatelessWidget {
   final List<Polygon> polygons;
-  final Widget? child;
+  final GeoPDF? geoPDF;
 
   /// screen space culling of polygons based on bounding box
   final bool polygonCulling;
 
-  PolygonLayer({
-    super.key,
-    this.polygons = const [],
-    this.polygonCulling = false,
-    this.child,
-  }) {
+  PolygonLayer(
+      {super.key,
+      this.polygons = const [],
+      this.polygonCulling = false,
+      this.geoPDF}) {
     if (polygonCulling) {
       for (final polygon in polygons) {
         polygon.boundingBox = LatLngBounds.fromPoints(polygon.points);
@@ -105,18 +104,20 @@ class PolygonLayer extends StatelessWidget {
             }
           }
 
-          polygonsWidget.add(
-            CustomPaint(
-              key: polygon.key,
-              painter: PolygonPainter(polygon, map.rotationRad),
-              size: size,
-              child: child != null ? SizedBox(
-                width: size.width,
-                height: size.height,
-                child: child,
-              ) : null,
+          if (geoPDF != null) {
+            geoPDF!.centerOffset =
+                map.getOffsetFromOrigin(geoPDF!.centerCoordinate);
+          }
+
+          polygonsWidget.add(CustomPaint(
+            key: polygon.key,
+            painter: PolygonPainter(
+              polygon,
+              map.rotationRad,
+              geoPDF: geoPDF,
             ),
-          );
+            size: size,
+          ));
         }
 
         return Stack(
@@ -140,8 +141,8 @@ class PolygonLayer extends StatelessWidget {
 class PolygonPainter extends CustomPainter {
   final Polygon polygonOpt;
   final double rotationRad;
-
-  PolygonPainter(this.polygonOpt, this.rotationRad);
+  final GeoPDF? geoPDF;
+  PolygonPainter(this.polygonOpt, this.rotationRad, {this.geoPDF});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -237,11 +238,15 @@ class PolygonPainter extends CustomPainter {
         ..color = polygonOpt.color
         ..blendMode = BlendMode.srcOut;
 
-      final path = Path();
-      path.addPolygon(polygonOpt.offsets, true);
-      canvas.drawPath(path, paint);
+      if (geoPDF != null) {
+        _drawImage(canvas, paint);
+      } else {
+        final path = Path();
+        path.addPolygon(polygonOpt.offsets, true);
+        canvas.drawPath(path, paint);
 
-      _paintBorder(canvas);
+        _paintBorder(canvas);
+      }
 
       canvas.restore();
     } else {
@@ -251,11 +256,14 @@ class PolygonPainter extends CustomPainter {
             polygonOpt.isFilled ? PaintingStyle.fill : PaintingStyle.stroke
         ..color = polygonOpt.color;
 
-      final path = Path();
-      path.addPolygon(polygonOpt.offsets, true);
-      canvas.drawPath(path, paint);
-
-      _paintBorder(canvas);
+      if (geoPDF != null) {
+        _drawImage(canvas, paint);
+      } else {
+        final path = Path();
+        path.addPolygon(polygonOpt.offsets, true);
+        canvas.drawPath(path, paint);
+        _paintBorder(canvas);
+      }
 
       if (polygonOpt.label != null) {
         Label.paintText(
@@ -269,6 +277,18 @@ class PolygonPainter extends CustomPainter {
         );
       }
     }
+  }
+
+  void _drawImage(Canvas canvas, Paint paint) {
+    canvas.drawImageNine(
+      geoPDF!.image,
+      Rect.fromCenter(
+          center: geoPDF!.centerOffset,
+          width: (polygonOpt.offsets[0].dx - polygonOpt.offsets[3].dx),
+          height: (polygonOpt.offsets[0].dy - polygonOpt.offsets[1].dy)),
+      Rect.fromPoints(polygonOpt.offsets[0], polygonOpt.offsets[2]),
+      paint,
+    );
   }
 
   @override
@@ -285,4 +305,33 @@ class PolygonPainter extends CustomPainter {
   double _sqr(double x) {
     return x * x;
   }
+}
+
+class GeoPDF {
+  final String path;
+  final List<LatLng> points;
+  late ui.Image image;
+  late LatLng centerCoordinate;
+  late Offset centerOffset;
+  bool active = true;
+
+  GeoPDF(this.path, this.points) {
+    centerCoordinate = LatLngBounds.fromPoints(points).center;
+  }
+
+  factory GeoPDF.fromJson(Map<String, dynamic> json) {
+    final List<LatLng> points = [];
+    for (final e in json['points'] as List<dynamic>) {
+      points.add(LatLng(e[1] as double, e[0] as double));
+    }
+    return GeoPDF(json['path'] as String, points)
+      ..active = json['active'] as bool;
+  }
+
+  Map<String, dynamic> toJson() => {
+        'path': path,
+        'points': points.map((e) => e.toJson()['coordinates']).toList(),
+        'centerCoordinate': centerCoordinate.toJson(),
+        'active': active,
+      };
 }
